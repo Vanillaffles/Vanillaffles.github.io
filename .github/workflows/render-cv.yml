@@ -6,6 +6,8 @@ on:
       - master
     paths:
       - "_data/cv.yml"
+      - "bin/prepare_rendercv.py"
+      - ".github/workflows/render-cv.yml"
       - "assets/rendercv/design.yaml"
       - "assets/rendercv/locale.yaml"
       - "assets/rendercv/settings.yaml"
@@ -24,7 +26,7 @@ jobs:
           python-version: "3.12"
       - name: Install RenderCV
         run: |
-          pip install -r requirements.txt
+          pip install 'rendercv[full]==2.8' pyyaml
       - name: RenderCV
         run: |
           cv_file=$(find _data  -maxdepth 1 -type f \( -name "cv.yaml" -o -name "cv.yml" \))
@@ -42,8 +44,12 @@ jobs:
             echo "Missing RenderCV config file!"
             exit 1
           fi
-          rendercv render $cv_file --settings $settings
-          rm assets/rendercv/rendercv_output/*.typ
+          rendercv_file="_data/.rendercv.yml"
+          trap 'rm -f "$rendercv_file"' EXIT
+          python bin/prepare_rendercv.py "$cv_file" "$rendercv_file"
+          rendercv render "$rendercv_file" --settings "$settings" \
+            --design "$rendercv_dir/design.yaml" --locale-catalog "$rendercv_dir/locale.yaml"
+          rm -f assets/rendercv/rendercv_output/*.typ
       - name: Upload rendercv_output as an artifact
         uses: actions/upload-artifact@v4
         with:
@@ -53,6 +59,10 @@ jobs:
         run: |
           git config --global user.name "${{ github.actor }}"
           git config --global user.email "${{ github.actor }}@users.noreply.github.com"
-          git add -A
+          git add assets/rendercv/rendercv_output/*.pdf
+          if git diff --cached --quiet; then
+            echo "CV PDF is already up to date."
+            exit 0
+          fi
           git commit -m "chore: render the latest CV"
           git push
